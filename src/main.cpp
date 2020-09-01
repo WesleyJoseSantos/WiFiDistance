@@ -5,7 +5,10 @@
 #include <PubSubClient.h>
 
 #define VL6180X_ADDRESS 0x29
-#define TOPIC_MASK "Pedro/Varg/Vl180x/%s/S2B"
+#define INTERVAL_LOG 10000
+#define INTERVAL_DATA 500
+#define DATA_TOPIC_MASK "Pedro/Varg/Vl180x/S2B/%s/"
+#define LOG_TOPIC_MASK "Pedro/Varg/Vl180x/LOG/%s/"
 
 VL6180xIdentification identification;
 VL6180x sensor(VL6180X_ADDRESS);
@@ -15,28 +18,51 @@ PubSubClient client(espClient);
 const char* ssid = "cabo canaveral";
 const char* password = "05151924";
 const char* mqttServer = "mqtt.eclipse.org";
-char topic[40];
+char dataTopic[40];
+char logTopic[40];
+
+void sendLog(unsigned long interval){
+  static unsigned long timer = 0;
+  if(millis() > timer + interval){
+    timer += interval;
+    char message[20];
+    timer += interval;
+    
+    sprintf(
+      message,
+      "{"
+          "\"p\":%i"
+      "}",
+      WiFi.RSSI()
+    );
+
+    client.publish(logTopic, message);
+    Serial.println(message);
+  }
+}
 
 /**
  * @brief Envia o valor da distância para o mqtt
  * 
  * @param distance 
  */
-void sendMessage(uint8_t distance){
-  char message[20];
+void sendDistance(uint8_t distance, unsigned long interval){
+  static unsigned long timer = 0;
+  if(millis() > timer + interval){
+    char message[20];
+    timer += interval;
+    
+    sprintf(
+      message,
+      "{"
+          "\"d\":%d"
+      "}",
+      distance
+    );
 
-  sprintf(
-    message,
-    "{"
-        "\"d\":%d"
-    "}",
-    distance
-  );
-
-  client.publish(topic, message);
-  Serial.println(message);
-
-  delay(500);
+    client.publish(dataTopic, message);
+    Serial.println(message);
+  }
 }
 
 /**
@@ -65,6 +91,7 @@ void sensorBegin(){
  */
 void wifiBegin(){
   WiFi.mode(WIFI_STA);
+  WiFi.setOutputPower(10);
   WiFi.begin(ssid, password);
 
   while (WiFi.status() != WL_CONNECTED) {
@@ -86,14 +113,28 @@ void mqttInit(){
   uint8_t macChar[6];
   char macStr[18] = { 0 };
   wifi_get_macaddr(STATION_IF, macChar);
-  printf(macStr, "%02x%02x%02x%02x%02x%02x", macChar[0], macChar[1], macChar[2], macChar[3], macChar[4], macChar[5]);
+  printf(
+    macStr, 
+    "%02x%02x%02x%02x%02x%02x", 
+    macChar[0], 
+    macChar[1], 
+    macChar[2], 
+    macChar[3], 
+    macChar[4], 
+    macChar[5]
+  );
   String mac = String(macStr);
 
   randomSeed(micros());
   sprintf(
-    topic,
-    TOPIC_MASK,
-    mac
+    logTopic,
+    LOG_TOPIC_MASK,
+    mac.c_str()
+  );
+  sprintf(
+    dataTopic,
+    DATA_TOPIC_MASK,
+    mac.c_str()
   );
   client.setServer(mqttServer, 1883);
 }
@@ -139,7 +180,10 @@ void loop() {
   }
   client.loop();
 
-  sendMessage(
-    sensor.getDistance()
+  sendLog(INTERVAL_LOG);
+
+  sendDistance(
+    sensor.getDistance(),
+    INTERVAL_DATA
   );
 }
