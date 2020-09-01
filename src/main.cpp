@@ -1,17 +1,16 @@
 #include <Arduino.h>
 #include <Wire.h>
-#include <SparkFun_VL6180X.h>
+#include "VL6180X.h"
 #include <ESP8266WiFi.h>
 #include <PubSubClient.h>
 
 #define VL6180X_ADDRESS 0x29
 #define INTERVAL_LOG 10000
-#define INTERVAL_DATA 500
-#define DATA_TOPIC_MASK "Pedro/Varg/Vl180x/S2B/%s/"
-#define LOG_TOPIC_MASK "Pedro/Varg/Vl180x/LOG/%s/"
+#define INTERVAL_DATA 50
+#define DATA_TOPIC_MASK "Pedro/Vl180x/S2B/%s"
+#define LOG_TOPIC_MASK "Pedro/Vl180x/LOG/%s"
 
-VL6180xIdentification identification;
-VL6180x sensor(VL6180X_ADDRESS);
+VL6180X sensor;
 
 WiFiClient espClient;
 PubSubClient client(espClient);
@@ -71,18 +70,10 @@ void sendDistance(uint8_t distance, unsigned long interval){
  */
 void sensorBegin(){
   Wire.begin(2,0);
-
-  delay(100);
-
-  sensor.getIdentification(&identification);
-
-  if(sensor.VL6180xInit() != 0){
-    Serial.println("FAILED TO INITALIZE");
-  }; 
-
-  sensor.VL6180xDefautSettings(); 
   
-  delay(1000);
+  sensor.init();
+  sensor.configureDefault();
+  sensor.setTimeout(500);
 }
 
 /**
@@ -110,21 +101,12 @@ void wifiBegin(){
  * 
  */
 void mqttInit(){
-  uint8_t macChar[6];
-  char macStr[18] = { 0 };
-  wifi_get_macaddr(STATION_IF, macChar);
-  printf(
-    macStr, 
-    "%02x%02x%02x%02x%02x%02x", 
-    macChar[0], 
-    macChar[1], 
-    macChar[2], 
-    macChar[3], 
-    macChar[4], 
-    macChar[5]
-  );
-  String mac = String(macStr);
+  String mac = WiFi.macAddress();
 
+  for (size_t i = 0; i < mac.length(); i++)
+    if(mac[i] == ':') mac.remove(i, 1);
+
+  mac.toLowerCase();  
   randomSeed(micros());
   sprintf(
     logTopic,
@@ -183,7 +165,17 @@ void loop() {
   sendLog(INTERVAL_LOG);
 
   sendDistance(
-    sensor.getDistance(),
+    sensor.readRangeSingleMillimeters(),
     INTERVAL_DATA
   );
+
+  if(sensor.timeoutOccurred()){
+    client.publish(
+      logTopic, 
+      "{"
+          "\"e\":\"vl6108x timeout\""
+      "}"
+    );
+    Serial.println("timeout");
+  }
 }
