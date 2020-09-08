@@ -2,7 +2,7 @@
 #include <Wire.h>
 #include "VL6180X.h"
 
-#define INTERVAL_DATA 50
+#define INTERVAL_DATA 10
 #define PIN_FREQ 4
 #define DIST_MIN 0
 #define DIST_MAX 200
